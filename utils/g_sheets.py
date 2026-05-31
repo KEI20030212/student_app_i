@@ -1520,6 +1520,43 @@ def update_account_role(user_id, new_role):
         print(f"アカウント権限更新エラー: {e}")
         return False
 
+def save_monthly_total(month_str, total_amount):
+    """月別の合計請求額を専用シートに保存する"""
+    try:
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        try:
+            ws = sh.worksheet("月別売上推移")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title="月別売上推移", rows="100", cols="2")
+            ws.update("A1:B1", [["年月", "合計請求額"]])
+        
+        records = ws.get_all_records()
+        cell_row = None
+        for i, row in enumerate(records):
+            if str(row.get("年月")) == month_str:
+                cell_row = i + 2
+                break
+        
+        if cell_row:
+            ws.update_cell(cell_row, 2, total_amount)
+        else:
+            ws.append_row([month_str, total_amount])
+        return True
+    except Exception as e:
+        print(f"売上保存エラー: {e}")
+        return False
+
+def load_monthly_totals():
+    """月別売上推移データを取得する"""
+    try:
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        ws = sh.worksheet("月別売上推移")
+        return pd.DataFrame(ws.get_all_records())
+    except:
+        return pd.DataFrame()
+
 #tuition_dashboard.py
 @st.cache_data(ttl=3600)
 def load_billing_data(year_month):
