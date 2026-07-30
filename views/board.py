@@ -36,9 +36,7 @@ def render_home_page():
     # ==========================================
     if user_role in ['admin', 'owner']:
         
-        # 🌟 ここで2校舎分のスプレッドシートIDを設定！
-        TABATA_SHEET_ID = "1j93KTSKjywAQoslEPt-osRMzOMSiheb8GrT77gLgPko" 
-        HIGASHI_JUJO_SHEET_ID = "1lY7t4gmeFClaWuVOC1DUb-18d3rK81OU5P_F5DabJeQ"
+        IKEGAMI_SHEET_ID = "1j93KTSKjywAQoslEPt-osRMzOMSiheb8GrT77gLgPko" #池上のURLに変更
         
         col_t1, col_t2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
         with col_t1:
@@ -113,15 +111,9 @@ def render_home_page():
 
         # 🌟 タブを廃止し、縦に並べて表示するように変更
         with st.container(border=True):
-            st.markdown("#### 🏫 田端新町校")
-            df_tabata = safe_load_transfer_requests(TABATA_SHEET_ID)
-            render_transfer_alerts(df_tabata, "田端新町校", TABATA_SHEET_ID)
-            
-            st.write("") # 少し余白をあける
-            
-            st.markdown("#### 🏫 東十条駅前校")
-            df_higashi = safe_load_transfer_requests(HIGASHI_JUJO_SHEET_ID)
-            render_transfer_alerts(df_higashi, "東十条駅前校", HIGASHI_JUJO_SHEET_ID)
+            st.markdown("#### 🏫 池上校")
+            df_tabata = safe_load_transfer_requests(IKEGAMI_SHEET_ID)
+            render_transfer_alerts(df_tabata, "池上校", IKEGAMI_SHEET_ID)
 
     # ==========================================
     # 🌟 2. 社員・管理者向け：小テストURL抜け検知アラート
