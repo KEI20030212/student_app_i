@@ -32,7 +32,7 @@ def get_gc_client():
 
 #改良版コード
 #汎用
-@st.cache_data(ttl=600) # 10分間キャッシュ
+@st.cache_data(ttl=600, show_spinner=False) # 10分間キャッシュ
 def get_all_logs():
     gc = get_gc_client()
     sh = gc.open_by_key(SPREADSHEET_ID)
@@ -44,7 +44,6 @@ def get_student_logs(student_name):
     df = get_all_logs()
     if df.empty:
         return df
-    # 特定の生徒名でフィルタリング
     student_df = df[df["名前"] == student_name]
     return student_df
 
@@ -68,13 +67,12 @@ def _raw_get_student_master():
     【裏方専用】Googleスプレッドシートから直接データを取得する（生通信）
     ※この関数は外から直接呼ばない
     """
-    import pandas as pd
     gc = get_gc_client()
     sh = gc.open_by_key(SPREADSHEET_ID)
     ws = sh.worksheet("設定_生徒情報")
     return pd.DataFrame(ws.get_all_records(numericise_ignore=["all"]))
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def get_student_master():
     """
     【全画面からの窓口】
@@ -238,6 +236,23 @@ def mark_messages_as_read(receiver_id):
                 
     except Exception as e:
         print(f"既読処理に失敗しました: {e}")
+
+@st.cache_data(ttl=600, show_spinner=False)
+def load_transfer_requests(sheet_id):
+    """Googleフォームからの振替申請データ（別スプレッドシート）を指定したIDから取得する"""
+    try:
+        import gspread
+        import pandas as pd
+        gc = get_gc_client()
+        # 🌟 修正：固定のIDではなく、呼び出し時に渡された「sheet_id」を開くように変更
+        sh = gc.open_by_key(sheet_id)
+        ws = sh.worksheet("フォームの回答 1")
+        records = ws.get_all_records()
+        return pd.DataFrame(records)
+    except Exception as e:
+        print(f"振替申請データ取得エラー: {e}")
+        import pandas as pd
+        return pd.DataFrame()
 
 #attendance_seat.py
 @st.cache_data(ttl=60)
@@ -492,45 +507,87 @@ def load_quiz_data_from_dedicated_sheet(student_name):
         return pd.DataFrame()
 
 #multi_input.pyで使用
-def get_all_teacher_names():
-    """講師マスタから講師名のリストを取得して五十音順にする"""
-    gc = get_gc_client() # 👈 先生の環境に合わせた接続！
-    try:
-        sh = gc.open_by_key(SPREADSHEET_ID)
+def _raw_get_all_teacher_names():
+    """
+    【裏方専用】Googleスプレッドシートから直接講師リストを取得する（生通信）
+    ※この関数は外から直接呼ばない
+    """
+    gc = get_gc_client()
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    sheet = sh.worksheet("講師マスタ")
+    
+    names = sheet.col_values(1)[1:] # 1行目の見出しを飛ばしてA列を取得
+    names = sorted([name.strip() for name in names if name.strip()])
+    
+    return names
 
-        sheet = sh.worksheet("講師マスタ")
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_all_teacher_names():
+    """
+    【全画面からの窓口】
+    robust_api_call を使って安全に通信し、成功した結果だけをキャッシュする最強の盾！
+    """
+    from utils.api_guard import robust_api_call
+    
+    # 🌟 生通信関数を robust_api_call で守りながら実行（失敗した時の安全ネットは空のリスト []）
+    lst = robust_api_call(_raw_get_all_teacher_names, fallback_value=[])
+    
+    # 🌟 リストの原本を保護するため、list() でコピーして返す（Mutation Error対策）
+    return list(lst)
+
+def save_logs_to_spreadsheet(rows):
+    """
+    【バルク対応】授業ログ統合シートに複数行の記録をまとめて一括保存する関数
+    rows: [ [日時, 生徒ID, 名前, ...], [...], ... ] の二次元リスト（27列構成）
+    """
+    if not rows:
+        return True
         
-        names = sheet.col_values(1)[1:] # 1行目の見出しを飛ばしてA列を取得
-        names = sorted([name.strip() for name in names if name.strip()])
-        return names
-        
-    except Exception as e:
-        import streamlit as st
-        st.error(f"🚨 講師マスタの取得に失敗しました！原因: {e}")
-        return []
+    gc = get_gc_client()
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    worksheet = sh.worksheet("授業ログ統合")
+    
+    worksheet.append_rows(rows, value_input_option="RAW")
+    return True
 
 def save_to_spreadsheet(student_id, name, subject, text_name, advanced_p, quiz_records, date, teacher_name="未入力", class_type="1:1", attendance="出席（通常）", class_slot="-", advice="-", parent_msg="-", next_handover="-", assigned_p=0, completed_p=0, motivation_rank=0, hw_reason="", hw_fix="", next_hw_text="-", next_hw_pages=0, late_time="-", concentration="-", reaction="-", next_bring=""):
     print(f"🌟🌟🌟 保存処理スタート！ ID:{student_id} 生徒名:{name} 🌟🌟🌟") 
     
     gc = get_gc_client()
-    try:
-        sh = gc.open_by_key(SPREADSHEET_ID)
-        worksheet = sh.worksheet("授業ログ統合")
-        
-        date_str = date.strftime("%Y/%m/%d") if hasattr(date, 'strftime') else str(date)
-        
-        # 🚨 超重要ポイント！
-        # リストの2番目に「student_id」を追加しました！
-        if not quiz_records:
-            worksheet.append_row([date_str, student_id, name, subject, text_name, advanced_p, "-", "-", "-", teacher_name, class_type, attendance, class_slot, advice, parent_msg, next_handover, assigned_p, completed_p, motivation_rank, hw_reason, hw_fix, next_hw_text, next_hw_pages, late_time, concentration, reaction, next_bring])
-        else:
-            for q in quiz_records:
-                worksheet.append_row([date_str, student_id, name, subject, text_name, advanced_p, f"第{q['unit']}章", q['score'], "-", teacher_name, class_type, attendance, class_slot, advice, parent_msg, next_handover, assigned_p, completed_p, motivation_rank, next_hw_text, next_hw_pages, late_time, concentration, reaction])
-        return True
-    except Exception as e:
-        import streamlit as st
-        st.error(f"🚨 スプレッドシートの書き込みでエラーが発生しました: {e}")
-        return False
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    worksheet = sh.worksheet("授業ログ統合")
+    
+    date_str = date.strftime("%Y/%m/%d") if hasattr(date, 'strftime') else str(date)
+
+    row_data = [
+        date_str,          # 0: 日時
+        student_id,        # 1: 生徒ID
+        name,              # 2: 名前
+        subject,           # 3: 科目
+        text_name,         # 4: テキスト
+        advanced_p,        # 5: 終了ページ
+        teacher_name,      # 6: 担当講師 (ここから左に3列詰めました)
+        class_type,        # 7: 授業形態
+        attendance,        # 8: 出欠
+        class_slot,        # 9: 授業コマ
+        advice,            # 10: アドバイス
+        parent_msg,        # 11: 保護者への連絡
+        next_handover,     # 12: 次回への引継ぎ
+        assigned_p,        # 13: 出した宿題P
+        completed_p,       # 14: やった宿題P
+        motivation_rank,   # 15: やる気ランク
+        hw_reason,         # 16: 未達成の理由
+        hw_fix,            # 17: 本日の修正策
+        next_hw_text,      # 18: 次回の宿題テキスト
+        next_hw_pages,     # 19: 次回の宿題ページ数
+        late_time,         # 20: 遅刻時間
+        concentration,     # 21: 集中力
+        reaction,          # 22: ミスへの反応
+        next_bring         # 23: 次回の持ち物
+    ]
+    
+    worksheet.append_row(row_data, value_input_option="RAW")
+    return True
 
 def get_last_handover(name, subject):
     """
@@ -593,7 +650,7 @@ def get_last_homework_info(name, subject):
     except Exception as e:
         return "なし", "-"
 
-def get_last_page_from_sheet(name, subject): # 🌟 引数に subject を追加！
+def get_last_page_from_sheet(name, subject):
     """
     「授業ログ統合」シートから、特定の科目の前回の終了ページ（進捗）を探し出す関数
     """
@@ -672,17 +729,14 @@ def add_new_textbook(new_name):
         # 🌟 5列構成（テキスト, 章, 単元名, 開始ページ, 終了ページ）に合わせて追加
         worksheet.append_row([new_name, "-", "-", "-", "-"])
         
-        # 🌟 ここが自動並べ替えの魔法！
-        # 1行目（ヘッダー）は残したまま、A列〜E列（5列目）までを1列目（テキスト名）の昇順でまとめてソートします
-        worksheet.sort((1, 'asc'), range='A2:E1000')
         return True
     except Exception as e:
         st.error(f"🚨 新規テキストの裏側でエラー発生: {e}")
         return False
 
+@st.cache_data(ttl=600, show_spinner=False)
 def get_textbook_master():
     """テキストと章、および単元名を取得する"""
-    import streamlit as st
     try:
         gc = get_gc_client()
         sh = gc.open_by_key(SPREADSHEET_ID)
@@ -1054,6 +1108,7 @@ def save_trial_lesson_to_spreadsheet(date, student_name, subject, text_name, adv
         return False
 
 #dashboard.py
+@st.cache_data(ttl=60, show_spinner=False)
 def load_quiz_records():
     """
     全員共通の「小テスト記録」シートから全データを読み込む
@@ -1151,6 +1206,7 @@ def load_self_study_data():
         return pd.DataFrame()
 
 #quiz_dashboard.py
+@st.cache_data(ttl=600, show_spinner=False)
 def get_quiz_master_dict():
     """
     「設定_小テスト一覧」シートから、テスト名と満点・用紙サイズの対応表を取得する
@@ -1192,31 +1248,22 @@ def get_quiz_master_dict():
         print(f"小テスト設定の読み込みエラー: {e}")
         return {}
 
-def save_quiz_to_dedicated_sheet(date_str, student_name, text_name, chapter, score, w_nums, mode):
+def save_quizzes_to_dedicated_sheet(rows):
     """
-    小テスト専用シートに記録を保存する
-    mode: "授業内" または "自習"
+    【バルク対応】小テスト専用シートに複数の記録をまとめて一括保存する関数
+    rows: [ [日時, 名前, テキスト, 単元, 点数, ミス番号, 実施形態], [...] ] の二次元リスト
     """
-    try:
-        gc = get_gc_client()
-        sh = gc.open_by_key(SPREADSHEET_ID)
-        ws = sh.worksheet("小テスト記録")
-        
-        row_data = [
-            date_str,      # 日時
-            student_name,  # 名前
-            text_name,     # テキスト
-            chapter,       # 単元
-            score,         # 点数
-            w_nums,        # ミス問題番号
-            mode           # 実施形態（授業内/自習）
-        ]
-        
-        ws.append_row(row_data)
+    if not rows:
         return True
-    except Exception as e:
-        st.error(f"小テスト保存エラー: {e}")
-        return False
+        
+    gc = get_gc_client()
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    ws = sh.worksheet("小テスト記録")
+    
+    # 🌟 gspreadの append_rows を使うことで、二次元配列を一撃で追加！通信は1回のみ！
+    # value_input_option="RAW" を添えて、Googleの勝手な型変換によるバグを防御します
+    ws.append_rows(rows, value_input_option="RAW")
+    return True
 
 #quiz_maker.py
 def add_quiz_maker_sheet(test_name, sheet_id, full_marks, paper_size="A4"): # 🌟 ここに full_marks を追加！
@@ -1301,8 +1348,8 @@ def update_homework_status(row_index, new_status):
         try:
             sh = gc.open_by_key(SPREADSHEET_ID)
             ws = sh.worksheet("学校課題管理")
-            # ステータス列（F列 = 6番目）を更新
-            ws.update_cell(row_index, 6, new_status)
+            # ステータス列（I列 = 9番目）を更新
+            ws.update_cell(row_index, 9, new_status)
             return True
         except Exception:
             time.sleep(2)
@@ -1470,15 +1517,100 @@ def get_sent_messages(sender_id):
     except Exception as e:
         return []
 
+#line_report.py
+def get_sent_list(date_str):
+    """特定の日の送信済み生徒IDリストを取得する"""
+    try:
+        import gspread
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        try:
+            ws = sh.worksheet("送信済み履歴")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title="送信済み履歴", rows="1000", cols="2")
+            ws.update("A1:B1", [["日付", "生徒ID"]])
+            return []
+        
+        records = ws.get_all_records()
+        return [str(r["生徒ID"]) for r in records if str(r["日付"]) == date_str]
+    except:
+        return []
+
+def update_sent_flag(date_str, student_id, is_sent):
+    """送信済みフラグをスプレッドシートに保存/削除する"""
+    try:
+        import gspread
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        ws = sh.worksheet("送信済み履歴")
+        records = ws.get_all_records()
+        
+        # 既存の行を探す
+        row_idx = None
+        for i, r in enumerate(records):
+            if str(r["日付"]) == date_str and str(r["生徒ID"]) == str(student_id):
+                row_idx = i + 2
+                break
+        
+        if is_sent and not row_idx:
+            # チェックされたが履歴にない場合は追加
+            ws.append_row([date_str, str(student_id)])
+        elif not is_sent and row_idx:
+            # チェックが外されたが履歴にある場合は削除
+            ws.delete_rows(row_idx)
+        return True
+    except:
+        return False
+
+def save_parent_reply(date_str, student_id, student_name, teacher_name, reaction_type, reply_text):
+    """保護者からのLINE返信やリアクションをスプレッドシートに記録する"""
+    try:
+        import gspread
+        import datetime
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        
+        # 🌟 列名は全部で7項目（A列〜G列）
+        headers = ["記録日時", "授業日", "生徒ID", "生徒名", "担当講師", "リアクション種別", "返信メモ"]
+        
+        try:
+            ws = sh.worksheet("保護者返信履歴")
+        except gspread.exceptions.WorksheetNotFound:
+            # シートがなければ自動作成 (余裕を持って10列で作成)
+            ws = sh.add_worksheet(title="保護者返信履歴", rows="2000", cols="10")
+            ws.update("A1:G1", [headers]) # 🌟 A1からG1までの7列に修正
+        
+        # 🌟 安全装置：すでにシートが存在していても、1行目が空（列名がない）なら自動作成
+        if not ws.row_values(1):
+            ws.update("A1:G1", [headers])
+            
+        now_str = datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        ws.append_row([now_str, date_str, str(student_id), student_name, teacher_name, reaction_type, reply_text])
+        return True
+    except:
+        return False
+
+def load_parent_reply_data():
+    """保護者からの返信・リアクション履歴をすべて取得する"""
+    try:
+        import gspread
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        ws = sh.worksheet("保護者返信履歴")
+        records = ws.get_all_records()
+        return pd.DataFrame(records)
+    except:
+        return pd.DataFrame()
+
 #my_salary.py
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def load_published_salary():
     """先生用のページで公開済みの給与データを読み込む"""
     try:
         gc = get_gc_client()
         # 👇 読み込み処理をすべて try の中に入れるのが最大のポイント！
         sh = gc.open_by_key(SPREADSHEET_ID) 
-        ws = sh.worksheet("給与公開用データ")
+        ws = sh.worksheet("公開給与")
         return pd.DataFrame(ws.get_all_records())
         
     except Exception as e:
@@ -1559,43 +1691,6 @@ def update_account_role(user_id, new_role):
         print(f"アカウント権限更新エラー: {e}")
         return False
 
-def save_monthly_total(month_str, total_amount):
-    """月別の合計請求額を専用シートに保存する"""
-    try:
-        gc = get_gc_client()
-        sh = gc.open_by_key(SPREADSHEET_ID)
-        try:
-            ws = sh.worksheet("月別売上推移")
-        except gspread.exceptions.WorksheetNotFound:
-            ws = sh.add_worksheet(title="月別売上推移", rows="100", cols="2")
-            ws.update("A1:B1", [["年月", "合計請求額"]])
-        
-        records = ws.get_all_records()
-        cell_row = None
-        for i, row in enumerate(records):
-            if str(row.get("年月")) == month_str:
-                cell_row = i + 2
-                break
-        
-        if cell_row:
-            ws.update_cell(cell_row, 2, total_amount)
-        else:
-            ws.append_row([month_str, total_amount])
-        return True
-    except Exception as e:
-        print(f"売上保存エラー: {e}")
-        return False
-
-def load_monthly_totals():
-    """月別売上推移データを取得する"""
-    try:
-        gc = get_gc_client()
-        sh = gc.open_by_key(SPREADSHEET_ID)
-        ws = sh.worksheet("月別売上推移")
-        return pd.DataFrame(ws.get_all_records())
-    except:
-        return pd.DataFrame()
-
 #tuition_dashboard.py
 @st.cache_data(ttl=3600)
 def load_billing_data(year_month):
@@ -1664,6 +1759,43 @@ def load_price_master():
                 df[col] = 0
 
     return df
+
+def save_monthly_total(month_str, total_amount):
+    """月別の合計請求額を専用シートに保存する"""
+    try:
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        try:
+            ws = sh.worksheet("月別売上推移")
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title="月別売上推移", rows="100", cols="2")
+            ws.update("A1:B1", [["年月", "合計請求額"]])
+        
+        records = ws.get_all_records()
+        cell_row = None
+        for i, row in enumerate(records):
+            if str(row.get("年月")) == month_str:
+                cell_row = i + 2
+                break
+        
+        if cell_row:
+            ws.update_cell(cell_row, 2, total_amount)
+        else:
+            ws.append_row([month_str, total_amount])
+        return True
+    except Exception as e:
+        print(f"売上保存エラー: {e}")
+        return False
+
+def load_monthly_totals():
+    """月別売上推移データを取得する"""
+    try:
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        ws = sh.worksheet("月別売上推移")
+        return pd.DataFrame(ws.get_all_records())
+    except:
+        return pd.DataFrame()
 
 #salary_dashboard.py
 def load_instructor_master():
@@ -1836,4 +1968,3 @@ def update_fixed_costs_in_sheet(updated_df):
     except Exception as e:
         print(f"固定費の更新エラー: {e}")
         return False
-

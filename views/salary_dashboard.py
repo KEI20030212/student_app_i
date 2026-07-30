@@ -29,7 +29,8 @@ def fetch_instructor_master_cached():
 def render_salary_dashboard_page():
     st.header("💰 給与・交通費ダッシュボード")
 
-    df_instructors = fetch_instructor_master_cached()
+    # 🌟 唯一の修正点：警告防止のために「.copy()」をつけて受け取る
+    df_instructors = fetch_instructor_master_cached().copy()
 
     # --------------------------------------------------------
     # 操作パネル（一括データ取得＆ゆらぎ吸収）
@@ -38,7 +39,10 @@ def render_salary_dashboard_page():
         st.toast(st.session_state['toast_msg'], icon="✨")
         del st.session_state['toast_msg']
 
-    df_all = cached_get_all_logs()
+    # 🌟 唯一の修正点：警告防止のために「.copy()」をつけて受け取る
+    df_all_raw = cached_get_all_logs()
+    df_all = df_all_raw.copy() if not df_all_raw.empty else pd.DataFrame()
+    
     month_options = ["データなし"]
     
     if not df_all.empty and "APIエラー発生" not in df_all.columns and '日時' in df_all.columns:
@@ -116,9 +120,16 @@ def render_salary_dashboard_page():
                 final_salary = koma_salary + transport_total + allowance
 
                 summary_list.append({
-                    "👨‍🏫 担当講師": teacher, "合計コマ数": total_koma, "授業給 (円)": int(koma_salary),
-                    "役職手当 (円)": int(allowance), "出勤日数": working_days, 
-                    "交通費合計 (円)": int(transport_total), "💰 最終支給額 (円)": int(final_salary)
+                    "👨‍🏫 担当講師": teacher, 
+                    "合計コマ数": total_koma,
+                    "1:1コマ": koma_11, 
+                    "1:2コマ": koma_12, 
+                    "1:3コマ": koma_13, 
+                    "授業給 (円)": int(koma_salary),
+                    "役職手当 (円)": int(allowance), 
+                    "出勤日数": working_days, 
+                    "交通費合計 (円)": int(transport_total), 
+                    "💰 最終支給額 (円)": int(final_salary)
                 })
 
             if summary_list:
@@ -184,6 +195,5 @@ def render_salary_dashboard_page():
         st.markdown("##### 📋 講師設定一覧（確認用）")
         st.dataframe(df_instructors, hide_index=True, use_container_width=True)
         
-        # 🌟 変更：手動追加による名前ズレ事故を根本から防止するための親切なアナウンス欄に変更
         with st.expander("➕ 新しい講師を登録する（アカウント連動）"):
             st.info("💡 **一元管理へのアップデート**\n\n「名前の入力ミス」や「データの二重管理」を完璧に防ぐため、新しい講師の登録は左メニューの **「⚙️ アカウント・システム設定」** から行ってください。\n\nそちらでアカウントを作成すると、自動的にこの講師マスタにも連動して、初期給与設定の枠が自動生成されます！")

@@ -68,7 +68,8 @@ def render_student_portal_page():
                         st.markdown("##### 📝 基本情報の入力")
                         
                         branch_opts = {
-                            "池上校": "i",
+                            "田端新町校": "t",
+                            "東十条駅前校": "h",
                             "プレフィックスなし (数字のみ)": ""
                         }
                         selected_branch_key = st.selectbox("🏫 所属校舎（生徒IDの頭文字になります）", list(branch_opts.keys()), index=0)

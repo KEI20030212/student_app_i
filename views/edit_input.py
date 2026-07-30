@@ -2,20 +2,29 @@ import streamlit as st
 import pandas as pd
 import datetime
 import time
+import re
 from utils.g_sheets import (
     get_all_logs, 
     update_lesson_record_in_sheet,
     load_quiz_records,            
     get_quiz_master_dict,         
-    update_quiz_record_in_sheet   
+    update_quiz_record_in_sheet,
+    get_all_teacher_names 
 )
 from utils.api_guard import robust_api_call
 
 def render_edit_input_page():
-    st.info("💡 過去の授業記録を呼び出して、内容を直接修正・上書き保存できます。")
+    st.info("💡 過去の授業記録（個別・集団）を呼び出して、内容を直接修正・上書き保存できます。")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col_r = st.columns([2, 3, 1])
     target_date = col1.date_input("📅 修正したい授業の日付", datetime.date.today())
+
+    with col_r:
+        st.write("") 
+        st.write("") 
+        if st.button("🔄 データを更新", use_container_width=True):
+            st.cache_data.clear() # キャッシュを強制クリアして最新化
+            st.rerun() 
 
     with st.spinner("記録を検索中..."):
         df_logs = robust_api_call(get_all_logs, fallback_value=pd.DataFrame())
@@ -37,7 +46,11 @@ def render_edit_input_page():
 
     options = []
     for idx, row in df_filtered.iterrows():
-        opt_label = f"{row.get('名前', '不明')} - {row.get('科目', '不明')} ({row.get('授業コマ', '不明')})"
+        c_type = str(row.get('授業形態', '不明'))
+        teacher = str(row.get('担当講師', '不明'))
+        icon = "🧑‍🤝‍🧑" if "集団" in c_type else "👤"
+        
+        opt_label = f"{icon} [{c_type}] {row.get('名前', '不明')} - {row.get('科目', '不明')} ({teacher}先生 / {row.get('授業コマ', '不明')})"
         options.append((idx, opt_label))
 
     selected_opt = col2.selectbox("📝 修正する記録を選択", options, format_func=lambda x: x[1])
@@ -50,6 +63,38 @@ def render_edit_input_page():
         st.write(f"### ✍️ {record.get('名前')} さんの記録を修正")
 
         with st.form("edit_record_form"):
+            st.write("📋 **基本情報の修正**")
+            c_head1, c_head2 = st.columns(2)
+            
+            teacher_opts = list(get_all_teacher_names())
+            
+            current_teacher = str(record.get('担当講師', '')).strip()
+            if current_teacher and current_teacher not in teacher_opts:
+                teacher_opts.append(current_teacher)
+            if not teacher_opts:
+                teacher_opts = [current_teacher] if current_teacher else ["未設定"]
+                
+            new_teacher = c_head1.selectbox("👨‍🏫 担当講師", teacher_opts, index=teacher_opts.index(current_teacher) if current_teacher in teacher_opts else 0)
+            
+            curr_type_raw = str(record.get('授業形態', '1:1')).strip()
+            type_options = ["1:1", "1:2", "1:3", "1:1(Q)", "集団"]
+            
+            if "集団" in curr_type_raw:
+                base_idx = 4
+                num_match = re.search(r'\d+', curr_type_raw)
+                def_num = int(num_match.group()) if num_match else 5
+            else:
+                base_idx = type_options.index(curr_type_raw) if curr_type_raw in type_options else 0
+                def_num = 5
+
+            new_base_type = c_head2.selectbox("👥 授業形態", type_options, index=base_idx)
+            
+            if new_base_type == "集団":
+                group_num = c_head2.number_input("👥 集団の人数", min_value=1, max_value=50, value=def_num)
+                final_class_type = f"集団({group_num}名)"
+            else:
+                final_class_type = new_base_type
+
             c1, c2, c3 = st.columns(3)
             
             att_opts = ["出席（通常）", "出席（振替授業を消化）", "欠席（後日振替あり）", "欠席（振替なし）"]
@@ -63,8 +108,9 @@ def render_edit_input_page():
             current_late = str(record.get('遅刻時間', 0)).replace('分', '')
             new_late = c3.number_input("⏰ 遅刻時間 (分)", value=int(current_late) if current_late.isdigit() else 0, step=5)
 
+            st.divider()
             st.write("📚 **授業進捗・宿題（直接テキストを編集できます）**")
-            st.caption("※複雑なページ数も、ここのテキストを直接書き換えるだけで簡単に修正・上書きが可能です。")
+            st.caption("※複雑なページ数や、Myeトレの単元名なども、ここのテキストを直接書き換えるだけで簡単に修正・上書きが可能です。")
             
             c_txt1, c_txt2 = st.columns(2)
             with c_txt1:
@@ -74,7 +120,6 @@ def render_edit_input_page():
                 new_hw_text = st.text_area("📘 次回の宿題テキスト", value=str(record.get('次回の宿題テキスト', '')), height=68)
                 new_hw = st.text_area("🚀 次回の宿題範囲 (P.〇〜〇)", value=str(record.get('次回の宿題ページ数', '')), height=68)
                 
-            # 🌟 持ち物の編集欄を追加
             new_bring = st.text_input("🎒 次回の持ち物", value=str(record.get('次回の持ち物', '')))
 
             st.write("⚠️ **宿題未達成の理由と修正策**")
@@ -103,7 +148,7 @@ def render_edit_input_page():
             with c_hw_r2:
                 new_fix_sel = st.selectbox("本日の修正策", fix_opts, index=fix_idx)
                 if new_fix_sel == "その他":
-                    default_fix_other = curr_fix.replace("その他: ", "") if "その他" in curr_fix else curr_fix
+                    default_fix_other = curr_fix.replace("表达:", "") if "その他" in curr_fix else curr_fix
                     new_fix_other = st.text_input("修正策（その他）", value=default_fix_other)
                     final_fix = f"その他: {new_fix_other}" if new_fix_other else "その他"
                 else:
@@ -117,7 +162,17 @@ def render_edit_input_page():
             
             day_quizzes = []
             if not df_quizzes.empty and '名前' in df_quizzes.columns and '日時' in df_quizzes.columns:
-                mask = (df_quizzes['名前'] == record.get('名前')) & (df_quizzes['日時'].astype(str).str.startswith(date_str))
+                # 🌟 現在修正中の授業レコードから「1コマ目」などの文字列を抽出
+                current_slot = str(record.get('授業コマ', '')).split(" ")[0]
+                # 小テスト側の列名を特定（古いデータにも対応するため）
+                slot_col = 'タイミング' if 'タイミング' in df_quizzes.columns else '実施形態' if '実施形態' in df_quizzes.columns else df_quizzes.columns[-1]
+                
+                # 🌟 抽出条件：この授業コマ（または昔の"授業内"データ）に完全一致するものだけを狙い撃ち！
+                mask = (
+                    (df_quizzes['名前'] == record.get('名前')) & 
+                    (df_quizzes['日時'].astype(str).str.startswith(date_str)) &
+                    (df_quizzes[slot_col].astype(str).isin([current_slot, "授業内"]))
+                )
                 day_quizzes = df_quizzes[mask].to_dict('records')
             
             edited_quizzes = []
@@ -132,14 +187,15 @@ def render_edit_input_page():
                     if matched_marks:
                         current_max = int(pd.Series(matched_marks).mode()[0])
                         
-                    st.caption(f"📝 **{q_name}**")
-                    col_q1, col_q2 = st.columns(2)
-                    with col_q1:
-                        new_unit = st.number_input(f"単元/回", value=int(old_unit) if str(old_unit).isdigit() else 1, key=f"edit_q_unit_{q_idx}")
-                    with col_q2:
-                        safe_old_score = int(old_score) if str(old_score).isdigit() else 0
-                        safe_max = max(current_max, safe_old_score)
-                        new_score = st.number_input(f"点数 (/{current_max}点満点)", min_value=0, max_value=safe_max, value=safe_old_score, key=f"edit_q_score_{q_idx}")
+                    with st.container(border=True):
+                        st.write(f"✏️ **【{q_name}】**")
+                        col_q1, col_q2 = st.columns(2)
+                        with col_q1:
+                            new_unit = st.number_input(f"単元/回", value=int(old_unit) if str(old_unit).isdigit() else 1, key=f"edit_q_unit_{idx}_{q_idx}")
+                        with col_q2:
+                            safe_old_score = int(old_score) if str(old_score).isdigit() else 0
+                            safe_max = max(current_max, safe_old_score)
+                            new_score = st.number_input(f"点数 (/{current_max}点満点)", min_value=0, max_value=safe_max, value=safe_old_score, key=f"edit_q_score_{idx}_{q_idx}")
                     
                     edited_quizzes.append({
                         "quiz_name": q_name,
@@ -149,7 +205,7 @@ def render_edit_input_page():
                         "new_score": new_score
                     })
             else:
-                st.info("この日の小テスト記録はありません。")
+                st.info("この授業コマで記録された小テストはありません。")
 
             st.divider()
             st.write("🧠 **授業中の様子・評価**")
@@ -172,6 +228,8 @@ def render_edit_input_page():
             if submitted:
                 with st.spinner("データを上書き保存中..."):
                     update_data = {
+                        "担当講師": new_teacher,
+                        "授業形態": final_class_type,
                         "出欠": new_att,
                         "科目": new_sub,
                         "遅刻時間": new_late,
@@ -186,7 +244,7 @@ def render_edit_input_page():
                         "次回への引継ぎ": new_next_h,
                         "未達成の理由": final_reason,
                         "本日の修正策": final_fix,
-                        "次回の持ち物": new_bring # 🌟 追加
+                        "次回の持ち物": new_bring
                     }
                     
                     success_main = robust_api_call(
