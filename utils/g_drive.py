@@ -6,10 +6,10 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 # 🌟 大元フォルダのID
-MAIN_FOLDER_ID = "1PptAgfwzUT-wR5bPyYHaCO_olsEzi8FS" 
+MAIN_FOLDER_ID = "1coEV8RgdxUQS1cB_8ASil2Fht7sjzQOq"
 
 # 🌟 GASのウェブアプリURL
-GAS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbw5HuhPiaY8TwX190H5ya9uLDOsHqiT706n51vHDjHFCmd_sTQQb0654q2QyBavOTGqyA/exec"
+GAS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzVXGTIfzmoU_G568XJ6FOkR0JU7v7S47ATmmhI_U8Q3OPAzQE2OvK-PxIzMq8kjsvRiA/exec"
 
 # 🌟 変更点: 削除機能を追加するため、readonlyを外してフルアクセス権限に変更します
 SCOPES = ['https://www.googleapis.com/auth/drive'] 
