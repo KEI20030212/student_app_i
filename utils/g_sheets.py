@@ -800,9 +800,9 @@ def save_self_study_record(date, name, start_time, end_time, break_time, actual_
     
     # 🌟 各学年のスプレッドシートID
     GRADE_SHEET_IDS = {
-        "小学生": "1V4ID3wirXoTM3M-rdZeYhfu0wrVE19wu3AZOod2XVJ0",
-        "中学生": "1Tbbz7SO0-chcOlUwsDjTVhAYQ9zXNhopfwSPFpByD9A",
-        "高校生": "1nnFJo8k81VBuz232gAZYVnSX47YgLuaU8Mqt1hzuS_M"
+        "小学生": "1fvxlDAZssHgDcwq9p-CG1pCeT8EdaYZv3_amfFpENdw",
+        "中学生": "1pr2lIWGWqyB-k2YFmIhM4zcBpkfbdgAD-fG5e2j96x0",
+        "高校生": "1OgZlzOOEZGxKlcyVLxWEYVDvWEmYf31X8tcQOfE83No"
     }
     
     max_retries = 3
