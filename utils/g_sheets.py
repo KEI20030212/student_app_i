@@ -12,6 +12,7 @@ import base64
 import pickle
 import altair as alt
 import threading
+from utils.api_guard import robust_api_call
 
 def get_jst_now():
     """現在時刻を日本時間(JST)で取得する"""
@@ -655,45 +656,65 @@ def background_ai_tasks_bulk(spreadsheet_id, sheet_name, start_row, ai_tasks_inf
         for i, info in enumerate(ai_tasks_info):
             current_row_index = start_row + i
             
-            # AIを呼び出してスコアとコメントを作成
-            ai_score, ai_comment = generate_ai_feedback(
-                student_name=info[0],
-                subject=info[1],
-                homework_status=info[2],
-                concentration=info[3],
-                report_text=info[4]
-            )
+            ai_score, ai_comment = "B", ""
+            
+            # 🌟 新機能：怒られたら最大3回まで「待ってやり直す」シンプルループ！
+            for attempt in range(3):
+                # AIにスコアとコメントを作ってもらう
+                ai_score, ai_comment = generate_ai_feedback(
+                    student_name=info[0],
+                    subject=info[1],
+                    homework_status=info[2],
+                    concentration=info[3],
+                    report_text=info[4]
+                )
 
-            # 1件ずつスプレッドシートを更新
+                # もし「スピード違反（429）」や「制限到達（quota）」で怒られていたら...
+                if "429" in ai_comment or "quota" in ai_comment.lower():
+                    print(f"⚠️ Googleの速度制限に到達。50秒待機して再トライします... (試行 {attempt+1}/3)")
+                    time.sleep(50)  # 50秒間じっと待機する
+                    continue        # もう一回、同じ生徒の処理をやり直す
+                else:
+                    break           # 成功したら、やり直しループを抜ける！
+
+            # 1件ずつスプレッドシートを更新（綺麗な状態のものを書き込む）
             worksheet.update(
                 values=[[ai_comment, ai_score]],
                 range_name=f"Y{current_row_index}:Z{current_row_index}"
             )
             
-            # 🌟 超重要：Googleに怒られないよう、次の処理の前に「3秒休憩」する！
-            time.sleep(3)
+            time.sleep(4)
             
     except Exception as e:
         print(f"バックグラウンドバルク更新エラー: {e}")
 
 def background_ai_task(spreadsheet_id, sheet_name, row_index, student_name, subject, homework_status, concentration, report_text):
     from utils.ai_feedback import generate_ai_feedback
-    # AIを呼び出してスコアとコメントを自動作成
-    ai_score, ai_comment = generate_ai_feedback(
-        student_name=student_name,
-        subject=subject,
-        homework_status=homework_status,
-        concentration=concentration,
-        report_text=report_text
-    )
+    
+    ai_score, ai_comment = "B", ""
+    
+    # 🌟 単発保存の場合も、最大3回まで「待ってやり直す」ループを追加！
+    for attempt in range(3):
+        ai_score, ai_comment = generate_ai_feedback(
+            student_name=student_name,
+            subject=subject,
+            homework_status=homework_status,
+            concentration=concentration,
+            report_text=report_text
+        )
+        
+        if "429" in ai_comment or "quota" in ai_comment.lower():
+            print(f"⚠️ Googleの速度制限に到達。35秒待機して再トライします... (試行 {attempt+1}/3)")
+            time.sleep(35)
+            continue
+        else:
+            break
 
     try:
-        # スプレッドシートをこっそり再度開いて、仮文字を上書きする
         gc = get_gc_client()
         sh = gc.open_by_key(spreadsheet_id)
         worksheet = sh.worksheet(sheet_name)
         
-        # Y列（25番目）、Z列（26番目）をピンポイントで上書き更新！
         worksheet.update(
             values=[[ai_comment, ai_score]],
             range_name=f"Y{row_index}:Z{row_index}"
@@ -742,7 +763,7 @@ def save_logs_to_spreadsheet(rows):
     
     # 🌟 3. 追加された「行番号」をシステムから取得して、裏側にパスを出す
     updated_range = res.get('updates', {}).get('updatedRange', '')
-    match = re.search(r'[A-Z]+(\d+)', updated_range) # 「A42:Z43」みたいな文字から最初の行数(42)だけ抜き出す
+    match = re.search(r'[A-Z]+(\d+)', updated_range) 
         
     if match:
         start_row = int(match.group(1))
@@ -1773,50 +1794,40 @@ def update_school_homework_detail(row_idx, subject, task, deadline, memo):
         return False
 
 #search_page.py
-def delete_specific_log(student_id, student_name, date_str, period):
+def delete_specific_log(student_id, student_name, date_str, period, advice_text=""):
     """
-    「授業ログ統合」シートから、指定した生徒・日付・授業コマの記録を探して削除する関数
+    特定の授業ログを削除する。
+    アドバイスの文章(advice_text)も条件に加えて、「確実に指定された行」だけを狙い撃ちで消す。
     """
     gc = get_gc_client()
-    try:
-        sh = gc.open_by_key(SPREADSHEET_ID)
-        ws = sh.worksheet("授業ログ統合")
-        
-        all_data = ws.get_all_values()
-        if len(all_data) <= 1:
-            return False
-            
-        header = all_data[0]
-        
-        # 各列のインデックスを取得
-        try:
-            id_idx = header.index("生徒ID") if "生徒ID" in header else -1
-            name_idx = header.index("名前") if "名前" in header else header.index("生徒名")
-            date_idx = header.index("日時")
-            period_idx = header.index("授業コマ") # 🌟 「科目」ではなく「授業コマ」を探す
-        except ValueError:
-            return False
-
-        # 下の行（最新）から順番に探す
-        for i in range(len(all_data) - 1, 0, -1):
-            row = all_data[i]
-            
-            row_date = str(row[date_idx]).replace("-", "/")
-            target_date = date_str.replace("-", "/")
-            
-            # 日付と授業コマが一致するかチェック！
-            if target_date in row_date and row[period_idx] == period:
-                if id_idx != -1 and str(row[id_idx]) == str(student_id):
-                    ws.delete_rows(i + 1)
-                    return True
-                elif row[name_idx] == student_name:
-                    ws.delete_rows(i + 1)
-                    return True
-                    
+    sh = gc.open_by_key(SPREADSHEET_ID)
+    worksheet = sh.worksheet("授業ログ統合")
+    
+    all_values = worksheet.get_all_values()
+    if len(all_values) <= 1:
         return False
-    except Exception as e:
-        print(f"削除エラー: {e}")
-        return False
+        
+    # 下から順番に検索していく
+    for i in range(len(all_values) - 1, 0, -1):
+        row = all_values[i]
+        
+        # 安全のための長さチェック（11列目までデータがない行は無視）
+        if len(row) < 11:
+            continue
+            
+        r_date = str(row[0])
+        r_id = str(row[1])
+        r_period = str(row[9])
+        r_advice = str(row[10]) # 11列目がアドバイス
+        
+        # 日付、ID、コマが一致するかチェック
+        if date_str in r_date and r_id == str(student_id) and r_period == period:
+            # さらに「アドバイス内容」も一致するかチェック（これで双子を見分ける！）
+            if advice_text == "" or advice_text == r_advice:
+                worksheet.delete_rows(i + 1)
+                return True
+                
+    return False
 
 #message_sender.py
 def save_message(sender_id, receiver_id, message):
