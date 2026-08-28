@@ -72,13 +72,13 @@ def render_home_page():
                             
                             student = str(row.get('生徒氏名', '不明')).strip()
                             
-                            absent_date_raw = str(row.get('欠席予定の授業日', '不明')).strip()
+                            absent_date_raw = str(row.get('日付', '不明')).strip()
                             absent_date = absent_date_raw.split(' ')[0] if absent_date_raw else "不明"
-                            absent_time = str(row.get('欠席予定の授業時間', '')).strip()
+                            absent_time = str(row.get('時限', '')).strip()
                             
                             with st.expander(f"👤 {student} 様 （送信: {ts} / 欠席予定: {absent_date}）"):
                                 st.markdown(f"**■ 欠席予定:** {absent_date} {absent_time}")
-                                st.markdown(f"**■ 理由:** {row.get('お振替の理由', '')}")
+                                st.markdown(f"**■ 理由:** {row.get('理由', '')}")
                                 
                                 hope_days = []
                                 for col in df_transfers.columns:
@@ -92,7 +92,7 @@ def render_home_page():
                                 if hope_days:
                                     st.markdown(f"**■ 振替希望:**\n" + " \n".join([f"- {h}" for h in hope_days]))
                                     
-                                st.markdown(f"**■ 希望時間:** {row.get('お振替希望授業時間', '')}")
+                                st.markdown(f"**■ 希望時間:** {row.get('振替希望まとめ', '')}")
                                 st.markdown(f"**■ 備考:** {row.get('備考欄', '')}")
                                 st.markdown(f"[🔗 スプレッドシートで全回答を確認する](https://docs.google.com/spreadsheets/d/{sheet_id}/edit)")
 
