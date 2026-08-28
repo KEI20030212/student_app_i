@@ -37,7 +37,7 @@ def render_home_page():
     # ==========================================
     if user_role in ['admin', 'owner']:
         
-        IKEGAMI_SHEET_ID = "1j93KTSKjywAQoslEPt-osRMzOMSiheb8GrT77gLgPko" #池上のURLに変更
+        IKEGAMI_SHEET_ID = "1V7o5FJiwRLIAOh8AuxpaX5ohdQZQdc1dNxvRiCHoMxc" #池上のURLに変更
         
         col_t1, col_t2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
         with col_t1:
