@@ -78,6 +78,9 @@ def render_student_details_page(selected_student_option):
             st.markdown(f"**📚 受講科目**: {info.get('受講科目', '') or '未設定'}")
             st.markdown(f"**📋 契約コース**: {info.get('契約コース', '') or '未設定'}")
             
+            disp_email = info.get('保護者メールアドレス', '')
+            st.markdown(f"**✉️ 保護者メール**: {disp_email or '未設定'}")
+
             if disp_types:
                 st.markdown(f"**🎯 生徒タイプ**: {disp_types.replace('、', ' / ')}")
                 
@@ -159,7 +162,8 @@ def render_student_details_page(selected_student_option):
                                         new_exam,        
                                         new_school_type,
                                         new_contract_str,
-                                        new_type_str
+                                        new_type_str,
+                                        parent_email=new_parent_email.strip()
                                     )
                                     return True
                                 
