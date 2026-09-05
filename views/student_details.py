@@ -115,7 +115,8 @@ def render_student_details_page(selected_student_option):
                         new_school = st.text_input("学校名", value=info.get('学校名', ''))
                         new_target = st.text_input("志望校・通塾目的", value=info.get('志望校・目的', ''))
                         new_subjects = st.text_input("受講科目 (例: 英語, 数学)", value=info.get('受講科目', ''))
-                        
+                        new_parent_email = st.text_input("✉️ 保護者メールアドレス", value=info.get('保護者メールアドレス', ''))
+
                         st.markdown("##### 📋 契約コース (回数/月)")
                         raw_course = str(info.get('契約コース', ''))
                         
