@@ -46,7 +46,7 @@ def send_email_report(to_email, subject, body_text):
         msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
 
         # さくらインターネットのサーバーを使って送信（587ポート）
-        server = smtplib.SMTP_SSL('mail.l-p-c.jp', 465)
+        server = smtplib.SMTP_SSL('l-p-c.jp', 465)
         #server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)
