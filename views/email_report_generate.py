@@ -10,7 +10,7 @@ from utils.g_sheets import (
     load_quiz_records, 
     get_sent_list,      
     update_sent_flag,
-    get_student_master # 🌟 メールアドレス取得用に追加
+    get_student_master 
 )
 from utils.g_drive import get_or_create_student_folder
 from utils.api_guard import robust_api_call
@@ -25,11 +25,14 @@ def cached_load_quiz_records():
 def cached_get_student_master():
     return robust_api_call(get_student_master, fallback_value=pd.DataFrame())
 
-# --- 📧 メール送信のコア機能 ---
+# ==========================================
+# 🌟 修正版: 📧 メール送信のコア機能（さくらインターネット完全対応）
+# ==========================================
 def send_email_report(to_email, subject, body_text):
     """ システムから保護者へ直接メールを送信する関数 """
     sender_email = st.secrets.get("EMAIL_SENDER", "")
     sender_password = st.secrets.get("EMAIL_PASSWORD", "")
+    smtp_server = 'l-p-c.jp' # さくらのメールドメイン
     
     if not sender_email or not sender_password:
         return False, "⚠️ StreamlitのSecretsにメール設定 (EMAIL_SENDER, EMAIL_PASSWORD) がありません。"
@@ -37,23 +40,36 @@ def send_email_report(to_email, subject, body_text):
     if not to_email or "@" not in to_email:
         return False, "⚠️ 送信先のメールアドレスが正しくありません。"
 
-    try:
-        # メールの組み立て
-        msg = MIMEMultipart()
-        msg['From'] = sender_email
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
 
-        # さくらインターネットのサーバーを使って送信（587ポート）
-        server = smtplib.SMTP_SSL('l-p-c.jp', 465)
-        #server.starttls()
+    try:
+        # 【作戦1】ポート465 (SSL) で接続してみる
+        server = smtplib.SMTP_SSL(smtp_server, 465, timeout=10)
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
-        return True, "送信成功"
-    except Exception as e:
-        return False, f"送信エラー: {str(e)}"
+        return True, "送信成功 (SSL 465)"
+        
+    except Exception as e_ssl:
+        print(f"SSL(465)での送信失敗: {e_ssl}")
+        try:
+            # 【作戦2】ダメならポート587 (STARTTLS) で接続してみる
+            server = smtplib.SMTP(smtp_server, 587, timeout=10)
+            server.ehlo()
+            server.starttls() # ここで暗号化開始
+            server.ehlo()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+            server.quit()
+            return True, "送信成功 (STARTTLS 587)"
+            
+        except Exception as e_tls:
+            print(f"TLS(587)での送信失敗: {e_tls}")
+            return False, f"送信エラー: サーバーに接続できませんでした。（詳細: {str(e_tls)}）"
 
 # --- メイン描画関数 ---
 def render_email_report_tab(can_use_report):
@@ -67,7 +83,7 @@ def render_email_report_tab(can_use_report):
     with st.spinner(f"{date_str} の全データを解析中..."):
         df_all_logs = cached_get_all_logs()
         df_all_quizzes = cached_load_quiz_records()
-        df_students = cached_get_student_master() # 生徒マスタ（メアド取得用）
+        df_students = cached_get_student_master()
 
         if df_all_logs.empty or "APIエラー発生" in df_all_logs.columns:
             st.error("授業記録データの取得に失敗しました。")
@@ -108,7 +124,6 @@ def render_email_report_tab(can_use_report):
                 student_id = student_info.get(id_col, "未設定")
                 student_name = student_info.get(name_col, "不明")
 
-                # --- メールアドレスの取得 ---
                 parent_email = ""
                 if not df_students.empty and '生徒ID' in df_students.columns:
                     target_row = df_students[df_students['生徒ID'].astype(str) == str(student_id)]
@@ -183,11 +198,10 @@ def render_email_report_tab(can_use_report):
                 if is_myetore_used: quiz_results_list.append("Myeトレの該当範囲をご確認ください")
                 if quiz_results_list: quiz_text = "\n・".join(quiz_results_list)
 
-                # メール用の件名と本文
                 email_subject = f"【授業報告】{date_str} {student_name} 様の学習レポート"
                 
                 if bucket_name == "体験授業":
-                    advices_block = f"🗣️ 【本日の輝いていた点】\n" + "\n\n".join(advice_sections) + "\n\n" if advice_sections else ""
+                    advices_block = f"🗣️️ 【本日の輝いていた点】\n" + "\n\n".join(advice_sections) + "\n\n" if advice_sections else ""
                     msgs_block = f"📢 【今後の課題・ご提案】\n" + "\n\n".join(parent_msg_sections) + "\n\n" if parent_msg_sections else ""
                     email_message = f"保護者様\n\n本日は {student_name} さんの「体験授業」にお越しいただき、ありがとうございました！\n\n{classes_text}\n\n💯 【小テスト結果】\n・{quiz_text}\n\n{drive_url_line}{bring_text}{advices_block}{msgs_block}引き続きよろしくお願いいたします。\n（システム自動送信）"
                 else:
@@ -205,11 +219,9 @@ def render_email_report_tab(can_use_report):
                 with c_exp:
                     with st.expander(f"👤 {student_name} {label_suffix}", expanded=not check_val):
                         
-                        # 宛先と内容のプレビュー確認エリア
                         col_mail, col_btn = st.columns([3, 1])
                         
                         with col_mail:
-                            # マスターにメアドがなければ手入力できるようにする
                             target_email = st.text_input("✉️ 送信先メールアドレス", value=parent_email, key=f"addr_{student_id}")
                             
                         st.text_area("📝 メールのプレビュー（ここで手直し可能）", value=email_message, height=300, key=f"body_{student_id}")
@@ -217,16 +229,15 @@ def render_email_report_tab(can_use_report):
                         if st.button("📧 この内容でメールを送信する", key=f"btn_send_{student_id}", type="primary"):
                             if can_use_report:
                                 with st.spinner("メールを送信中..."):
-                                    # 編集後の本文を取得
                                     final_body = st.session_state[f"body_{student_id}"]
                                     success, msg = send_email_report(target_email, email_subject, final_body)
                                     
                                 if success:
                                     st.success(f"✅ {student_name} さんの保護者へメールを送信しました！")
-                                    # 送信済みにチェックを入れる（裏側を更新してリロード）
                                     robust_api_call(update_sent_flag, date_str, student_id, True)
                                     st.rerun()
                                 else:
-                                    st.error(msg)
+                                    # 🌟 エラー内容を画面にハッキリ表示する
+                                    st.error(f"❌ 送信失敗: {msg}")
                             else:
                                 st.error("送信権限がありません。")
