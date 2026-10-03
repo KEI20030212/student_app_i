@@ -1961,63 +1961,6 @@ def get_textbook_page_master():
         print(f"テキスト情報一覧マスタ取得エラー: {e}")
         return {}
 
-@st.cache_data(ttl=600, show_spinner=False)
-def get_textbook_page_master():
-    """
-    テキスト情報一覧から、章ごとの開始・終了ページを取得する
-    戻り値の例: 
-    { 
-      "新研究 数学": [ 
-        {"chapter": "第1章", "name": "式の計算", "start": 10, "end": 20},
-        {"chapter": "第2章", "name": "連立方程式", "start": 21, "end": 35} 
-      ] 
-    }
-    """
-    gc = get_gc_client()
-    try:
-        sh = gc.open_by_key(SPREADSHEET_ID)
-        ws = sh.worksheet("テキスト情報一覧")
-        data = ws.get_all_records()
-        df = pd.DataFrame(data)
-        
-        # 必要な列があるかチェック
-        req_cols = ["テキスト", "章", "開始ページ", "終了ページ"]
-        for col in req_cols:
-            if col not in df.columns:
-                print(f"テキスト情報一覧に {col} 列がありません")
-                return {}
-                
-        result = {}
-        for _, row in df.iterrows():
-            t_name = str(row["テキスト"]).strip()
-            if not t_name:
-                continue
-            
-            try:
-                # ページ数を数値として取得
-                s_page = int(float(row["開始ページ"]))
-                e_page = int(float(row["終了ページ"]))
-            except ValueError:
-                # ページ数が空欄や文字の場合はスキップ
-                continue 
-            
-            if t_name not in result:
-                result[t_name] = []
-                
-            unit_name = str(row["単元名"]).strip() if "単元名" in df.columns else ""
-            
-            result[t_name].append({
-                "chapter": str(row["章"]).strip(),
-                "unit_name": unit_name,
-                "start": s_page,
-                "end": e_page
-            })
-            
-        return result
-    except Exception as e:
-        print(f"テキスト情報一覧マスタ取得エラー: {e}")
-        return {}
-
 @st.cache_data(ttl=60)
 def load_school_work_logs():
     """学校ワーク進捗ログを全件取得"""
