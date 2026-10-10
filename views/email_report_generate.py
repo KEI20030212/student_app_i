@@ -47,11 +47,12 @@ def send_email_report(to_email, subject, body_text):
 
         # Gmailのサーバーを使って送信
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
         return True, "送信成功"
+    except smtplib.SMTPAuthenticationError:
+        return False, "送信エラー: メールアドレスかアプリパスワードが間違っています。"
     except Exception as e:
         return False, f"送信エラー: {str(e)}"
 
