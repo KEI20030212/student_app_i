@@ -46,7 +46,7 @@ def send_email_report(to_email, subject, body_text):
         msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
 
         # Gmailのサーバーを使って送信
-        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
         server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)
