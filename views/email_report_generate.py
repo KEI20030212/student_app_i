@@ -87,11 +87,12 @@ def render_email_report_tab(can_use_report):
 
     target_students = daily_logs[[id_col, name_col]].drop_duplicates().to_dict('records')
 
-    data_buckets = {"池上校": [], "体験授業": [], "その他": []}
+    data_buckets = {"田端新町校": [], "東十条駅前校": [], "体験授業": [], "その他": []}
     for s in target_students:
         s_id = str(s.get(id_col, "")).lower()
         if s_id == "trial": data_buckets["体験授業"].append(s)
-        elif s_id.startswith('i'): data_buckets["池上校"].append(s)
+        elif s_id.startswith('t'): data_buckets["田端新町校"].append(s)
+        elif s_id.startswith('h'): data_buckets["東十条駅前校"].append(s)
         else: data_buckets["その他"].append(s)
 
     display_buckets = {k: v for k, v in data_buckets.items() if len(v) > 0 or k != "その他"}
