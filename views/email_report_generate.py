@@ -10,7 +10,7 @@ from utils.g_sheets import (
     load_quiz_records, 
     get_sent_list,      
     update_sent_flag,
-    get_student_master 
+    get_student_master # 🌟 メールアドレス取得用に追加
 )
 from utils.g_drive import get_or_create_student_folder
 from utils.api_guard import robust_api_call
@@ -25,7 +25,7 @@ def cached_load_quiz_records():
 def cached_get_student_master():
     return robust_api_call(get_student_master, fallback_value=pd.DataFrame())
 
-# --- 📧 メール送信のコア機能（Outlook仕様に改修！） ---
+# --- 📧 メール送信のコア機能 ---
 def send_email_report(to_email, subject, body_text):
     """ システムから保護者へ直接メールを送信する関数 """
     sender_email = st.secrets.get("EMAIL_SENDER", "")
@@ -45,27 +45,13 @@ def send_email_report(to_email, subject, body_text):
         msg['Subject'] = subject
         msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
 
-        # ==========================================
-        # 🌟 NEW: Outlook (Microsoft 365) 用のSMTP設定
-        # ==========================================
-        smtp_server = 'smtp.office365.com'  # Outlookの送信サーバー
-        smtp_port = 587                     # Outlook指定のポート番号
-
-        # STARTTLS方式で接続
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.ehlo()
-        server.starttls() # 🌟 ここが超重要！通信を暗号化する
-        server.ehlo()
-        
-        # ログインして送信
+        # Gmailのサーバーを使って送信
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
-        
         return True, "送信成功"
-        
-    except smtplib.SMTPAuthenticationError:
-        return False, "⚠️ 送信エラー：メールアドレスまたはパスワード（アプリパスワード）が間違っているか、Microsoftアカウント側でSMTP送信が許可されていません。"
     except Exception as e:
         return False, f"送信エラー: {str(e)}"
 
@@ -101,12 +87,11 @@ def render_email_report_tab(can_use_report):
 
     target_students = daily_logs[[id_col, name_col]].drop_duplicates().to_dict('records')
 
-    data_buckets = {"田端新町校": [], "東十条駅前校": [], "体験授業": [], "その他": []}
+    data_buckets = {"池上校": [], "体験授業": [], "その他": []}
     for s in target_students:
         s_id = str(s.get(id_col, "")).lower()
         if s_id == "trial": data_buckets["体験授業"].append(s)
-        elif s_id.startswith('t'): data_buckets["田端新町校"].append(s)
-        elif s_id.startswith('h'): data_buckets["東十条駅前校"].append(s)
+        elif s_id.startswith('i'): data_buckets["池上校"].append(s)
         else: data_buckets["その他"].append(s)
 
     display_buckets = {k: v for k, v in data_buckets.items() if len(v) > 0 or k != "その他"}
@@ -223,6 +208,7 @@ def render_email_report_tab(can_use_report):
                         col_mail, col_btn = st.columns([3, 1])
                         
                         with col_mail:
+                            # マスターにメアドがなければ手入力できるようにする
                             target_email = st.text_input("✉️ 送信先メールアドレス", value=parent_email, key=f"addr_{student_id}")
                             
                         st.text_area("📝 メールのプレビュー（ここで手直し可能）", value=email_message, height=300, key=f"body_{student_id}")
@@ -230,11 +216,13 @@ def render_email_report_tab(can_use_report):
                         if st.button("📧 この内容でメールを送信する", key=f"btn_send_{student_id}", type="primary"):
                             if can_use_report:
                                 with st.spinner("メールを送信中..."):
+                                    # 編集後の本文を取得
                                     final_body = st.session_state[f"body_{student_id}"]
                                     success, msg = send_email_report(target_email, email_subject, final_body)
                                     
                                 if success:
                                     st.success(f"✅ {student_name} さんの保護者へメールを送信しました！")
+                                    # 送信済みにチェックを入れる（裏側を更新してリロード）
                                     robust_api_call(update_sent_flag, date_str, student_id, True)
                                     st.rerun()
                                 else:
