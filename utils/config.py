@@ -6,15 +6,16 @@
 """
 
 # ==========================================
-# 📊 振替申請用
+# 📊 スプレッドシートIDの管理
 # ==========================================
+# 💡 ここにすべてのスプレッドシートIDを集約します
+
 # メインのシステム管理用スプレッドシート（元々 g_sheets.py にあったものなどを想定）
 # SPREADSHEET_ID = "ここにメインのシートIDがあれば記述"
 
 # 🏫 校舎ごとの振替・欠席連絡用スプレッドシートID
 TRANSFER_SHEET_IDS = {
-    "田端新町校": "1j93KTSKjywAQoslEPt-osRMzOMSiheb8GrT77gLgPko",
-    "東十条駅前校": "1lY7t4gmeFClaWuVOC1DUb-18d3rK81OU5P_F5DabJeQ"
+    "池上校": "1V7o5FJiwRLIAOh8AuxpaX5ohdQZQdc1dNxvRiCHoMxc",
 }
 
 # ==========================================
@@ -23,29 +24,19 @@ TRANSFER_SHEET_IDS = {
 
 # ① 画像を生成するためのGAS (Google Apps Script) のURL
 SELF_STUDY_GAS_URLS = {
-    "田端新町校": {
-        "小学生": "https://script.google.com/macros/s/AKfycbxmaI040Qm0iDYykcP14JWw-eID_jeh_2oauTpW6ysYtYkdamtgn4uMLDYts72AQ71s/exec",
-        "中学生": "https://script.google.com/macros/s/AKfycbyFMRO5HJXNH7rh8TELMU5DXta_1qINJ41AexRe5KX0kOMDu-kXMG5ZJxNkiYgHSmQn7w/exec",
-        "高校生": "https://script.google.com/macros/s/AKfycbxEXhITzJWJrW7P_LdI1tEzFFm8p3YwoEUQ5u_-ZGmQj_GzV3dCbRJRk4a8v2SeEBgz/exec"
-    },
-    "東十条駅前校": {
-        "小学生": "https://script.google.com/macros/s/AKfycbzzCAbe8J24XICaGNR57qD9ui_yO7Dc2D-SrZxTxRiVU77YMM0xvGC7eO0wpHxhC5IF/exec",
-        "中学生": "https://script.google.com/macros/s/AKfycbybDCaLgbVei66H7XdQgCaALoA0s1k-4lLuuIaESdRN5AYAwoROTLnJCU4bbp-wBhvf/exec",
-        "高校生": "https://script.google.com/macros/s/AKfycbz-_v6lPKqWQUpzMiZ8ExrwY722jmAbfI2Xmf2J6Lz0Z2S6HPx50KIoZMAth7lk8DEVKA/exec"
+    "池上校": {
+        "小学生": "https://script.google.com/macros/s/AKfycbxTrynj_X3KcAX4n4dDA8HSRHItt3RPU349XoRgm_Ss0nolm8ZQANw0JefYOqoHPFZV/exec",
+        "中学生": "https://script.google.com/macros/s/AKfycbw0c9AiBpQMIO-Cu2jSicYmghJbUVXKOFtLH9IWHo0wA9gyT_G_pv1-3elEmAEXCaaA/exec",
+        "高校生": "https://script.google.com/macros/s/AKfycbx4s0gBmZfDyUXWGTMQ-JexTstSVcQ-DIAsNFB-yjrGXG2m0Q2kqzelwN4FtLN6jECC/exec"
     }
 }
 
 # ② セル(C1, D1)に直接年月を書き込むためのスプレッドシートID
 SELF_STUDY_SHEET_IDS = {
-    "田端新町校": {
-        "小学生": "1V4ID3wirXoTM3M-rdZeYhfu0wrVE19wu3AZOod2XVJ0",
-        "中学生": "1Tbbz7SO0-chcOlUwsDjTVhAYQ9zXNhopfwSPFpByD9A",
-        "高校生": "1nnFJo8k81VBuz232gAZYVnSX47YgLuaU8Mqt1hzuS_M"
-    },
-    "東十条校": {
-        "小学生": "1n0NvREF5Sf8WHMVOXXHCfm6EhsYDtcDd0qB4dXMR4c8",
-        "中学生": "1okTYoVDhBfZzjcq5bVBeMxqc-7Ocv1Woz4JISDI3vGQ",
-        "高校生": "12fWkakGZPt8it_OxZNmddDOimzM0CTmCrD2GS5mIX2U"
+    "池上校": {
+    　　"小学生": "1fvxlDAZssHgDcwq9p-CG1pCeT8EdaYZv3_amfFpENdw",
+    　　"中学生": "1pr2lIWGWqyB-k2YFmIhM4zcBpkfbdgAD-fG5e2j96x0",
+        "高校生": "1OgZlzOOEZGxKlcyVLxWEYVDvWEmYf31X8tcQOfE83No"
     }
 }
 
