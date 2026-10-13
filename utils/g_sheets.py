@@ -98,6 +98,120 @@ def get_student_info(student_name):#「特定の生徒1人だけの詳細情報�
             return r
     return {}
 
+#app.py
+@st.cache_data(ttl=600)
+def load_system_settings():
+    """
+    システム全体の基本設定（教室長名、校舎名、生徒IDプレフィックスなど）を読み込む。
+    シート上のすべての履歴を読み込み、最新の設定を構築して返します。
+    """
+    try:
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        try:
+            ws = sh.worksheet("設定_システム")
+        except:
+            return {} # シートがなければ空を返す
+            
+        records = ws.get_all_values()
+        
+        # データがヘッダー行（1行目）しかない、または空の場合は空を返す
+        if len(records) <= 1:
+            return {}
+            
+        # 全履歴を上から順番に読み込み、最新の状態で上書きしていく
+        manager_name = "教室長"
+        branches_dict = {} # 校舎ナンバーをキーにして、校舎名と頭文字を保存する辞書
+        
+        for row in records[1:]: # 2行目から最後までループ
+            if len(row) < 4:
+                continue # データが足りない行はスキップ
+                
+            num = str(row[0]).strip()
+            manager = str(row[1]).strip()
+            branch = str(row[2]).strip()
+            prefix = str(row[3]).strip()
+            
+            if manager:
+                manager_name = manager
+                
+            if num and branch:
+                # 同じ校舎ナンバーが後から出てきたら上書き（更新）される
+                branches_dict[num] = {"branch": branch, "prefix": prefix}
+        
+        # 抽出した辞書を "田端:t, 東十条:h" の形式にまとめる（ナンバー順に並び替え）
+        sorted_branches = []
+        for num in sorted(branches_dict.keys(), key=lambda x: int(x) if x.isdigit() else 999):
+            b_info = branches_dict[num]
+            sorted_branches.append(f"{b_info['branch']}:{b_info['prefix']}")
+            
+        combined_branches = ", ".join(sorted_branches)
+        
+        # 最初のプレフィックスを便宜上取得
+        first_prefix = ""
+        if sorted_branches:
+            first_prefix = branches_dict[list(sorted(branches_dict.keys(), key=lambda x: int(x) if x.isdigit() else 999))[0]]['prefix']
+                
+        settings = {
+            "教室長名": manager_name,
+            "メイン校舎名": combined_branches,
+            "生徒IDの頭文字": first_prefix 
+        }
+                
+        return settings
+    except Exception as e:
+        print(f"システム設定読み込みエラー: {e}")
+        return {}
+
+def save_system_settings(manager_name, branch_name, id_prefix):
+    """
+    初回セットアップなどで入力されたシステム設定を保存する
+    ※既存のデータを消さずに、下に追加（append）していきます。
+    フォーマット: [校舎ナンバー, 教室長名, 校舎, 頭文字ID]
+    """
+    try:
+        gc = get_gc_client()
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        
+        try:
+            ws = sh.worksheet("設定_システム")
+            records = ws.get_all_values()
+            
+            # 既存の最大の校舎ナンバーを探す
+            max_num = 0
+            for row in records[1:]:
+                if len(row) > 0 and str(row[0]).isdigit():
+                    max_num = max(max_num, int(row[0]))
+            next_num = max_num + 1
+            
+        except:
+            ws = sh.add_worksheet(title="設定_システム", rows="100", cols="10")
+            # 最初の1回目だけヘッダーを作る
+            ws.append_row(["校舎ナンバー", "教室長名", "校舎", "頭文字ID"])
+            next_num = 1
+            
+        # 入力されたカンマ区切りの文字列をバラして、それぞれの校舎ごとに1行ずつ追加する
+        branches = [b.strip() for b in str(branch_name).split(',')]
+        
+        for b in branches:
+            if ":" in b:
+                name, prefix = b.split(":")
+                # 下に1行追加 (ナンバーを自動採番して割り当て)
+                ws.append_row([str(next_num), manager_name, name.strip(), prefix.strip()])
+                next_num += 1
+        
+        # ログインできるようにアカウントシートにも管理者として追加
+        try:
+            acc_ws = sh.worksheet("設定_アカウント")
+            acc_ws.append_row(["admin", "admin123", manager_name, "admin"])
+        except:
+            pass # アカウントシートが無ければスルー
+            
+        return True
+    except Exception as e:
+        print(f"システム設定保存エラー: {e}")
+        return False
+
 #home.py
 @st.cache_data(ttl=120)
 def load_board_message():
