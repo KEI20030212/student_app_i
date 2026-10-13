@@ -1595,29 +1595,41 @@ def load_self_study_data():
         return pd.DataFrame()
 
 def sync_self_study_settings_add(student_id, name, grade_raw):
-    """新入生を自習管理スプレッドシートの「設定」シートに自動追加する（池上校専用）"""
+    """新入生を自習管理スプレッドシートの「設定」シートに自動追加する（複数校舎対応）"""
     import time
+    from utils.config import SELF_STUDY_SHEET_IDS
     
+    # 🌟 NEW: 設定シートから現在の全校舎のプレフィックスと校舎名の対応を取得
+    settings = load_system_settings()
+    sys_branch = settings.get("メイン校舎名", "")
+    
+    branch_dict = {}
+    if sys_branch:
+        for b in sys_branch.split(', '):
+            if ':' in b:
+                b_name, pref = b.split(':')
+                branch_dict[pref.lower()] = b_name
+
+    # 生徒IDの1文字目を取得して小文字に変換
     prefix = str(student_id)[0].lower()
     
-    # 🌟 修正：「i」から始まらない生徒（他校の生徒など）はスキップする安全設計
-    if prefix != 'i':
-        return True, "対象外"
-
-    # 🏢 池上校専用のスプレッドシートIDのみを配置
-    GRADE_SHEET_IDS = {
-        "小学生": "1fvxlDAZssHgDcwq9p-CG1pCeT8EdaYZv3_amfFpENdw",
-        "中学生": "1pr2lIWGWqyB-k2YFmIhM4zcBpkfbdgAD-fG5e2j96x0",
-        "高校生": "1OgZlzOOEZGxKlcyVLxWEYVDvWEmYf31X8tcQOfE83No"
-    }
-
+    # 🌟 NEW: プレフィックスから校舎名を特定
+    target_branch_name = branch_dict.get(prefix)
+    
+    # 校舎名が特定できない場合はエラーまたはスキップ
+    if not target_branch_name:
+        return False, f"ID頭文字 '{prefix}' に対応する校舎が見つかりません"
+        
     grade_category = "その他"
     if "小" in grade_raw: grade_category = "小学生"
     elif "中" in grade_raw: grade_category = "中学生"
     elif "高" in grade_raw: grade_category = "高校生"
     
-    target_sheet_id = GRADE_SHEET_IDS.get(grade_category)
-    if not target_sheet_id: return True, "対象外"
+    # 🌟 NEW: config.pyから対象のシートIDを取得
+    target_sheet_id = SELF_STUDY_SHEET_IDS.get(target_branch_name, {}).get(grade_category)
+    
+    # IDがまだ設定されていない場合はスキップする安全設計
+    if not target_sheet_id or target_sheet_id.startswith("ここ"): return True, "対象外"
 
     try:
         gc = get_gc_client()
@@ -1651,30 +1663,39 @@ def sync_self_study_settings_add(student_id, name, grade_raw):
                 new_ws.update(values=new_formulas, range_name="B8:B12", value_input_option="USER_ENTERED")
             except TypeError:
                 new_ws.update("B8:B12", new_formulas, value_input_option="USER_ENTERED")
-                
         return True, "成功"
     except Exception as e:
         return False, str(e)
 
 def sync_self_study_settings_remove(student_id, name):
-    """退塾生を自習管理スプレッドシートの「設定」シートから自動削除する（池上校専用）"""
+    """退塾生を自習管理スプレッドシートの「設定」シートから自動削除する（複数校舎対応）"""
     import time
+    from utils.config import SELF_STUDY_SHEET_IDS
     
-    prefix = str(student_id)[0].lower()
+    # 🌟 NEW: 設定シートから現在の全校舎のプレフィックスと校舎名の対応を取得
+    settings = load_system_settings()
+    sys_branch = settings.get("メイン校舎名", "")
     
-    # 🌟 修正：「i」から始まらない場合は処理しない
-    if prefix != 'i':
-        return True, "対象外"
+    branch_dict = {}
+    if sys_branch:
+        for b in sys_branch.split(', '):
+            if ':' in b:
+                b_name, pref = b.split(':')
+                branch_dict[pref.lower()] = b_name
 
-    GRADE_SHEET_IDS = {
-        "小学生": "1fvxlDAZssHgDcwq9p-CG1pCeT8EdaYZv3_amfFpENdw",
-        "中学生": "1pr2lIWGWqyB-k2YFmIhM4zcBpkfbdgAD-fG5e2j96x0",
-        "高校生": "1OgZlzOOEZGxKlcyVLxWEYVDvWEmYf31X8tcQOfE83No"
-    }
+    prefix = str(student_id)[0].lower()
+    target_branch_name = branch_dict.get(prefix)
+    
+    if not target_branch_name:
+        return False, f"ID頭文字 '{prefix}' に対応する校舎が見つかりません"
+        
+    # 🌟 NEW: config.pyから対象の校舎のシートID一覧（小中高すべて）を取得
+    target_grade_sheets = SELF_STUDY_SHEET_IDS.get(target_branch_name, {})
     
     try:
         gc = get_gc_client()
-        for sheet_id in GRADE_SHEET_IDS.values():
+        for sheet_id in target_grade_sheets.values():
+            if not sheet_id or sheet_id.startswith("ここ"): continue
             try:
                 sh = gc.open_by_key(sheet_id)
                 worksheet = sh.worksheet("設定")
