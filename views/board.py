@@ -1,8 +1,13 @@
+# views/home.py （元のファイル名に合わせて上書きしてください）
+
 import streamlit as st
 import pandas as pd
 import time
 import datetime
 import re 
+
+# 🌟 NEW: 設定ファイルから定数を呼び出す
+from utils.config import TRANSFER_SHEET_IDS
 
 from utils.g_sheets import (
     load_board_message,
@@ -22,7 +27,6 @@ def safe_load_quiz_records():
     df = robust_api_call(load_quiz_records, fallback_value=pd.DataFrame())
     return df.copy() if not df.empty else df
 
-# 🌟 修正：シートIDを受け取ってデータを読み込むように変更
 def safe_load_transfer_requests(sheet_id):
     df = robust_api_call(load_transfer_requests, sheet_id, fallback_value=pd.DataFrame())
     return df.copy() if not df.empty else df
@@ -35,16 +39,14 @@ def render_home_page():
     # ==========================================
     # 🌟 1. オーナー・管理者専用：振替申請アラート
     # ==========================================
-    if user_role in ['admin', 'owner']:
-        
-        IKEGAMI_SHEET_ID = "1V7o5FJiwRLIAOh8AuxpaX5ohdQZQdc1dNxvRiCHoMxc" #池上のURLに変更
+    if user_role in ['admin', 'sub_admin', 'owner']:
         
         col_t1, col_t2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
         with col_t1:
             st.subheader("🛎️ 振替申請アラート")
         with col_t2:
             if st.button("🔄 最新を確認", key="btn_update_transfers", use_container_width=True):
-                # load_transfer_requests の全キャッシュ（両校舎分）を一撃でクリア
+                # load_transfer_requests の全キャッシュを一撃でクリア
                 load_transfer_requests.clear()
                 st.rerun()
 
@@ -56,15 +58,12 @@ def render_home_page():
                 if 'タイムスタンプ' in df_transfers.columns:
                     df_transfers['タイムスタンプ_dt'] = pd.to_datetime(df_transfers['タイムスタンプ'], format='mixed', errors='coerce')
                     
-                    # データを新しい順に並べ替え
                     df_transfers = df_transfers.sort_values('タイムスタンプ_dt', ascending=False)
                     
-                    # 7日前を境界線にして、データを「直近」と「過去」に真っ二つに分ける
                     seven_days_ago = pd.Timestamp.now() - pd.Timedelta(days=7)
                     recent_transfers = df_transfers[df_transfers['タイムスタンプ_dt'] >= seven_days_ago]
                     past_transfers = df_transfers[df_transfers['タイムスタンプ_dt'] < seven_days_ago]
                     
-                    # 👉 共通処理：1件ずつカード形式で表示する関数を中に作る
                     def draw_transfer_cards(df_target):
                         for _, row in df_target.iterrows():
                             dt_val = row['タイムスタンプ_dt']
@@ -72,13 +71,13 @@ def render_home_page():
                             
                             student = str(row.get('生徒氏名', '不明')).strip()
                             
-                            absent_date_raw = str(row.get('日付', '不明')).strip()
+                            absent_date_raw = str(row.get('欠席予定の授業日', '不明')).strip()
                             absent_date = absent_date_raw.split(' ')[0] if absent_date_raw else "不明"
-                            absent_time = str(row.get('時限', '')).strip()
+                            absent_time = str(row.get('欠席予定の授業時間', '')).strip()
                             
                             with st.expander(f"👤 {student} 様 （送信: {ts} / 欠席予定: {absent_date}）"):
                                 st.markdown(f"**■ 欠席予定:** {absent_date} {absent_time}")
-                                st.markdown(f"**■ 理由:** {row.get('理由', '')}")
+                                st.markdown(f"**■ 理由:** {row.get('お振替の理由', '')}")
                                 
                                 hope_days = []
                                 for col in df_transfers.columns:
@@ -92,34 +91,34 @@ def render_home_page():
                                 if hope_days:
                                     st.markdown(f"**■ 振替希望:**\n" + " \n".join([f"- {h}" for h in hope_days]))
                                     
-                                st.markdown(f"**■ 希望時間:** {row.get('振替希望まとめ', '')}")
+                                st.markdown(f"**■ 希望時間:** {row.get('お振替希望授業時間', '')}")
                                 st.markdown(f"**■ 備考:** {row.get('備考欄', '')}")
                                 st.markdown(f"[🔗 スプレッドシートで全回答を確認する](https://docs.google.com/spreadsheets/d/{sheet_id}/edit)")
 
-                    # 🌟 1. 直近7日間のデータを常時表示
                     if not recent_transfers.empty:
                         st.warning(f"🔔 【{branch_name}】直近7日以内に **{len(recent_transfers)}件** の申請が届いています！")
                         draw_transfer_cards(recent_transfers)
                     else:
                         st.info(f"💡 【{branch_name}】直近7日以内の新しい振替申請はありません。")
 
-                    # 🌟 2. 過去のデータをアコーディオンに格納して表示
                     if not past_transfers.empty:
                         with st.expander(f"📂 【{branch_name}】過去の振替申請履歴（全 {len(past_transfers)}件）"):
                             draw_transfer_cards(past_transfers)
             else:
                 st.info(f"💡 【{branch_name}】まだデータがありません。（またはシートが見つかりません）")
 
-        # 🌟 タブを廃止し、縦に並べて表示するように変更
+        # 🌟 NEW: config.pyの辞書を使って動的に表示（将来、池上校が増えてもconfigに足すだけで自動で画面にも出るようになります）
         with st.container(border=True):
-            st.markdown("#### 🏫 池上校")
-            df_tabata = safe_load_transfer_requests(IKEGAMI_SHEET_ID)
-            render_transfer_alerts(df_tabata, "池上校", IKEGAMI_SHEET_ID)
+            for branch_name, sheet_id in TRANSFER_SHEET_IDS.items():
+                st.markdown(f"#### 🏫 {branch_name}")
+                df_transfer = safe_load_transfer_requests(sheet_id)
+                render_transfer_alerts(df_transfer, branch_name, sheet_id)
+                st.write("") # 少し余白をあける
 
     # ==========================================
     # 🌟 2. 社員・管理者向け：小テストURL抜け検知アラート
     # ==========================================
-    if user_role in ['admin', 'owner', 'head_teacher', 'am']:
+    if user_role in ['admin', 'sub_admin', 'owner', 'head_teacher', 'am']:
         df_logs = safe_get_all_logs() 
         df_quizzes = safe_load_quiz_records() 
         today = datetime.date.today()
@@ -134,7 +133,6 @@ def render_home_page():
                 
                 missing_url_students = []
                 for student in today_students:
-                    # 👇 変更：その生徒の今日の授業ログを絞り込み、Myeトレを使ったか確認
                     student_classes_today = today_logs[today_logs[name_col] == student]
                     used_myetore = any("Myeトレ" in str(row.get("テキスト", "")) for _, row in student_classes_today.iterrows())
 
@@ -145,7 +143,6 @@ def render_home_page():
                         if not student_quizzes.empty:
                             has_quiz = True
                             
-                    # 👇 変更：小テストがなく、かつMyeトレもやっていない生徒だけをエラーにする
                     if not has_quiz and not used_myetore:
                         missing_url_students.append(student)
                         
@@ -168,7 +165,7 @@ def render_home_page():
     
     st.info(current_message.replace('\n', '  \n'))
     
-    if user_role in ['admin', 'owner', 'am']:
+    if user_role in ['admin', 'sub_admin', 'owner', 'am']:
         with st.expander("✏️ 掲示板を編集"):
             new_msg = st.text_area("内容を入力", value=current_message, height=100)
             if st.button("💾 掲示板を更新"):
@@ -184,6 +181,6 @@ def render_home_page():
     st.divider()
     
     # ==========================================
-    # 🌟 4. 個別フィードバックエリア（部品を呼び出すだけ！）
+    # 🌟 4. 個別フィードバックエリア
     # ==========================================
     render_feedback_board()
